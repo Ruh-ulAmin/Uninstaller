@@ -92,6 +92,7 @@ function Uninstall-Software {
     )
 
     $uninstallSuccess = $false
+    $outputFile = "uninstall_log.txt"
 
     # Approach 1: UninstallString from Get-Package
     $package = Get-Package | Where-Object { $_.Name -eq $ProductName }
@@ -162,13 +163,46 @@ function Uninstall-Software {
         }
     }
 
+    # Approach 5: Win32_Product WMI Class
     if (-not $uninstallSuccess) {
-        $output = "Software not found: $ProductName"
+        try {
+            $wmiQuery = "SELECT * FROM Win32_Product WHERE Name='$ProductName'"
+            $software = Get-WmiObject -Query $wmiQuery
+            if ($software) {
+                $uninstallResult = $software.Uninstall()
+                if ($uninstallResult.ReturnValue -eq 0) {
+                    $output = "Successfully uninstalled software using Win32_Product: $ProductName"
+                    Write-Host $output
+                    Write-OutputToFile -Output $output -FilePath $outputFile
+                    $uninstallSuccess = $true
+                } else {
+                    Write-Host "Failed to uninstall $ProductName using Win32_Product. Return code: $($uninstallResult.ReturnValue)"
+                }
+            }
+        } catch {
+            Write-Host "An error occurred while uninstalling $ProductName using Win32_Product:`n$($_.Exception.Message)"
+        }
+    }
+
+    if (-not $uninstallSuccess) {
+        $output = "Software not found or unable to uninstall: $ProductName"
         Write-Host $output
         Write-OutputToFile -Output $output -FilePath $outputFile
     }
 }
 
+function Write-OutputToFile {
+    param (
+        [string]$Output,
+        [string]$FilePath
+    )
+
+    try {
+        $Output | Out-File -FilePath $FilePath -Append
+    } catch {
+        Write-Host "An error occurred while writing to the output file:`n$($_.Exception.Message)"
+    }
+}
 
 # Define and populate the $softwareList variable with installed software
 $softwareList = @(Get-Package -ProviderName Programs -IncludeWindowsInstaller) |
