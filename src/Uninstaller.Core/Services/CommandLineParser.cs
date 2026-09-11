@@ -30,16 +30,37 @@ public static class CommandLineParser
             }
         }
 
-        // Unquoted: split on the first space that is followed by something
-        // that looks like a flag or another path, falling back to the first
-        // whitespace if we can't be clever about it.
-        var spaceIndex = commandLine.IndexOf(' ');
-        if (spaceIndex < 0)
+        // Unquoted, with no closing quote found above: some installers (older
+        // NSIS/InstallShield ones especially) register UninstallString without
+        // quoting the path even when it contains spaces, e.g.
+        // "C:\Program Files\Vendor App\uninstall.exe -s". Splitting on the
+        // first space would misparse that as fileName="C:\Program". Instead,
+        // try the space-delimited prefixes from longest to shortest and use
+        // the first one that actually exists on disk.
+        var spaceIndices = new List<int>();
+        for (var i = 0; i < commandLine.Length; i++)
+        {
+            if (commandLine[i] == ' ')
+            {
+                spaceIndices.Add(i);
+            }
+        }
+
+        for (var i = spaceIndices.Count - 1; i >= 0; i--)
+        {
+            var candidate = commandLine[..spaceIndices[i]];
+            if (File.Exists(candidate))
+            {
+                return (candidate, commandLine[(spaceIndices[i] + 1)..].TrimStart());
+            }
+        }
+
+        if (spaceIndices.Count == 0)
         {
             return (commandLine, string.Empty);
         }
 
-        return (commandLine[..spaceIndex], commandLine[(spaceIndex + 1)..].TrimStart());
+        return (commandLine[..spaceIndices[0]], commandLine[(spaceIndices[0] + 1)..].TrimStart());
     }
 
     /// <summary>

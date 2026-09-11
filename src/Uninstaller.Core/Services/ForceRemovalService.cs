@@ -32,7 +32,8 @@ public sealed class ForceRemovalService
             {
                 Kind = LeftoverKind.RegistryKey,
                 Path = program.RegistryKeyPath,
-                Description = "Uninstall registry entry"
+                Description = "Uninstall registry entry",
+                RegistryArchitecture = program.Architecture
             });
         }
 
@@ -75,13 +76,13 @@ public sealed class ForceRemovalService
                 switch (item.Kind)
                 {
                     case LeftoverKind.RegistryKey:
-                        RemoveRegistryKey(item.Path);
+                    case LeftoverKind.OrphanUninstallEntry:
+                        RemoveRegistryKey(item.Path, item.RegistryArchitecture);
                         break;
                     case LeftoverKind.Folder:
                         Directory.Delete(item.Path, recursive: true);
                         break;
                     case LeftoverKind.Shortcut:
-                    case LeftoverKind.OrphanUninstallEntry:
                         File.Delete(item.Path);
                         break;
                 }
@@ -101,14 +102,22 @@ public sealed class ForceRemovalService
         return results;
     }
 
-    private static void RemoveRegistryKey(string fullPath)
+    private static void RemoveRegistryKey(string fullPath, ProgramArchitecture architecture)
     {
-        var (hive, view, subPath) = SplitRegistryPath(fullPath);
+        var (hive, subPath) = SplitRegistryPath(fullPath);
+
+        // WOW64 registry redirection means a key read via the 32-bit view
+        // reports the same virtual path as its 64-bit counterpart, even
+        // though it physically lives under Software\WOW6432Node. Re-opening
+        // it for deletion must use the same view it was discovered under,
+        // or the delete silently targets a key that doesn't exist there.
+        var view = architecture == ProgramArchitecture.Bit32 ? RegistryView.Registry32 : RegistryView.Registry64;
+
         using var baseKey = RegistryKey.OpenBaseKey(hive, view);
         baseKey.DeleteSubKeyTree(subPath, throwOnMissingSubKey: false);
     }
 
-    internal static (RegistryHive Hive, RegistryView View, string SubPath) SplitRegistryPath(string fullPath)
+    internal static (RegistryHive Hive, string SubPath) SplitRegistryPath(string fullPath)
     {
         var separatorIndex = fullPath.IndexOf('\\');
         var rootName = separatorIndex > 0 ? fullPath[..separatorIndex] : fullPath;
@@ -123,8 +132,7 @@ public sealed class ForceRemovalService
             _ => RegistryHive.LocalMachine
         };
 
-        // Registry64 always resolves the "real" path this string already points at.
-        return (hive, RegistryView.Registry64, subPath);
+        return (hive, subPath);
     }
 
     private static long? TryGetDirectorySize(string path)

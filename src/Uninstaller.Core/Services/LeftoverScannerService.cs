@@ -50,7 +50,8 @@ public sealed class LeftoverScannerService
                 {
                     Kind = LeftoverKind.OrphanUninstallEntry,
                     Path = program.RegistryKeyPath,
-                    Description = $"Orphaned registry entry for '{program.DisplayName}' (install folder and uninstaller both missing)"
+                    Description = $"Orphaned registry entry for '{program.DisplayName}' (install folder and uninstaller both missing)",
+                    RegistryArchitecture = program.Architecture
                 });
             }
         }

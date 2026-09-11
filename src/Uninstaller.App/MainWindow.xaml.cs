@@ -151,6 +151,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        // "Uninstall Silently" always means silent; otherwise honor the
+        // user's "prefer silent uninstall" option from Settings.
+        silent = silent || _viewModel.Settings.PreferSilentUninstall;
+
         if (_viewModel.ConfirmBeforeUninstall)
         {
             var confirm = System.Windows.MessageBox.Show(this,
