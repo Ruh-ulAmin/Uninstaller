@@ -1,0 +1,23 @@
+## .NET build output
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+
+## Visual Studio
+.vs/
+*.vspscc
+*.vssscc
+
+## Rider / VS Code
+.idea/
+.vscode/
+
+## Publish output
+publish/
+*.pubxml
+*.pubxml.user
+
+## OS files
+.DS_Store
+Thumbs.db
