@@ -3,15 +3,21 @@
   <assemblyIdentity version="1.0.0.0" name="Uninstaller.App" />
 
   <!--
-    Uninstalling programs requires writing to HKEY_LOCAL_MACHINE, deleting
-    files under Program Files/ProgramData, and removing shortcuts from the
-    all-users Start Menu - all of which need an elevated token. Requesting
-    it up front avoids partial failures mid-operation.
+    Deliberately NOT requireAdministrator. Forcing the whole app to run
+    elevated from launch would mean every action - including ones sourced
+    from HKEY_CURRENT_USER\...\Uninstall, which any unprivileged process
+    running as the logged-in user can write to - silently inherits a full
+    administrator token with no further consent prompt. Instead, the app
+    launches at the user's normal integrity level (or elevated, if the user
+    explicitly chose "Run as administrator") and requests elevation
+    per-action only for entries that actually came from HKEY_LOCAL_MACHINE,
+    via Verb="runas" at the moment it's needed - exactly like Windows' own
+    Programs and Features. See UninstallService/ForceRemovalService.
   -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

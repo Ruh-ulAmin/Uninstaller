@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -6,6 +7,7 @@ using Microsoft.Win32;
 using Uninstaller.App.ViewModels;
 using Uninstaller.App.Views;
 using Uninstaller.Core.Models;
+using Uninstaller.Core.Services;
 
 namespace Uninstaller.App;
 
@@ -85,6 +87,32 @@ public partial class MainWindow : Window
         MainViewModel.OpenFolder(_viewModel.Logger.LogFolder);
 
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => System.Windows.Application.Current.Shutdown();
+
+    private void RestartAsAdminButton_Click(object sender, RoutedEventArgs e)
+    {
+        var exePath = Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrWhiteSpace(exePath))
+        {
+            System.Windows.MessageBox.Show(this, "Could not determine the application path.", "Uninstaller",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+            System.Windows.Application.Current.Shutdown();
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // User declined the UAC prompt - stay open exactly as before.
+        }
+    }
 
     // ===================== Edit menu =====================
 
@@ -166,6 +194,11 @@ public partial class MainWindow : Window
             }
         }
 
+        if (!await WarnIfRunningAsync(target))
+        {
+            return;
+        }
+
         var progressWindow = new ProgressLogWindow($"Uninstalling {target.DisplayName}...", allowCancel: false) { Owner = this };
         progressWindow.Show();
 
@@ -179,6 +212,54 @@ public partial class MainWindow : Window
         {
             progressWindow.AppendLine("You can try 'Force Remove / Clean Leftovers...' if the uninstaller is broken or missing.");
         }
+    }
+
+    /// <summary>
+    /// Checks whether the given program's install folder has a running
+    /// process open, and if so, offers to close it before continuing.
+    /// Returns false if the caller should abort (user chose Cancel).
+    /// </summary>
+    private async Task<bool> WarnIfRunningAsync(ProgramViewModel target)
+    {
+        if (string.IsNullOrWhiteSpace(target.Program.InstallLocation))
+        {
+            return true;
+        }
+
+        var runningProcesses = await Task.Run(() =>
+            RunningProcessChecker.FindProcessesUnder(target.Program.InstallLocation));
+
+        if (runningProcesses.Count == 0)
+        {
+            return true;
+        }
+
+        var names = string.Join(", ", runningProcesses.Select(p => $"{p.ProcessName} (PID {p.ProcessId})"));
+        var choice = System.Windows.MessageBox.Show(this,
+            $"'{target.DisplayName}' appears to still be running:\n\n{names}\n\n" +
+            "Files it has open can't be removed while it's running. Close it now and continue?",
+            "Program Is Running", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+
+        if (choice == MessageBoxResult.Cancel)
+        {
+            return false;
+        }
+
+        if (choice == MessageBoxResult.Yes)
+        {
+            var stillRunning = await Task.Run(() =>
+                RunningProcessChecker.TryStop(runningProcesses, TimeSpan.FromSeconds(5)));
+            if (stillRunning.Count > 0)
+            {
+                System.Windows.MessageBox.Show(this,
+                    $"Could not close: {string.Join(", ", stillRunning.Select(p => p.ProcessName))}. " +
+                    "Some files may fail to remove.",
+                    "Uninstaller", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        // MessageBoxResult.No falls through and continues anyway.
+        return true;
     }
 
     private async void UninstallCheckedMenuItem_Click(object sender, RoutedEventArgs e)
@@ -232,14 +313,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        var (fileName, arguments) = CommandLineParser.Split(target.Program.ModifyPath);
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = arguments,
+            UseShellExecute = true
+        };
+
+        // Same reasoning as UninstallService: only elevate for entries that
+        // came from HKEY_LOCAL_MACHINE. A per-user (HKCU) entry - writable
+        // by any unprivileged process - must never be auto-elevated just
+        // because the user clicked Modify on it.
+        if (target.Program.Scope == ProgramScope.Machine)
+        {
+            psi.Verb = "runas";
+        }
+
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = target.Program.ModifyPath,
-                UseShellExecute = true,
-                Verb = "runas"
-            });
+            Process.Start(psi);
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            _viewModel.StatusText = $"Elevation was declined for '{target.DisplayName}'.";
         }
         catch (Exception ex)
         {
@@ -255,6 +352,11 @@ public partial class MainWindow : Window
         {
             System.Windows.MessageBox.Show(this, "Select a program first.", "Uninstaller",
                 MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!await WarnIfRunningAsync(target))
+        {
             return;
         }
 

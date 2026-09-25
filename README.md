@@ -40,14 +40,71 @@ with real uninstall reliability features and leftover cleanup on top.
 - **Logging** - every action is recorded under
   `%LOCALAPPDATA%\Uninstaller\Logs` for an audit trail.
 
-## Why it needs Administrator
+## Elevation model
 
-Machine-wide uninstall entries live in `HKEY_LOCAL_MACHINE`, and their
-install folders are typically under `Program Files`/`ProgramData` - both
-require an elevated token to modify or delete. The app's manifest requests
-`requireAdministrator`, so Windows will prompt for elevation on launch. If
-you decline, the app still runs and shows a warning banner, but some
-uninstalls and cleanups may fail.
+The app launches at the user's normal (non-elevated) integrity level -
+its manifest deliberately does **not** request `requireAdministrator`.
+Elevation is requested per-action, only when it's actually needed, the
+same way Windows' own Programs and Features works:
+
+- Uninstalling, modifying, or force-removing a program whose entry lives
+  in `HKEY_LOCAL_MACHINE` (installed for all users) triggers a UAC prompt
+  for that one action.
+- Per-user programs (`HKEY_CURRENT_USER`) and Store apps run without
+  elevation - they don't need it, and never silently inherit it.
+- A toolbar/menu action ("File > Restart as Administrator") relaunches the
+  whole app elevated if you'd rather not be prompted per-action (e.g. for
+  a big batch uninstall or the system-wide Leftover Scanner).
+
+This matters for more than convenience: `HKEY_CURRENT_USER` is writable by
+*any* unprivileged process running as the logged-in user, no admin rights
+needed. An app that runs fully elevated from launch and blindly executes
+whatever `UninstallString`/`ModifyPath` a registry entry contains - HKCU
+entries included - turns "click Uninstall" into arbitrary code execution
+with administrator rights. Gating elevation by where the entry actually
+came from closes that off. See [Security](#security) below for the full
+list of hardening measures.
+
+## Security
+
+This app runs with real destructive power over the filesystem and
+registry, some of it elevated, so a few things are worth calling out
+explicitly:
+
+- **No blanket elevation.** See [Elevation model](#elevation-model) above
+  - this is the main one.
+- **Recursive deletes are guarded.** Before force-removing a folder
+  (`ForceRemovalService`/`PathSafetyGuard`), the app refuses to delete
+  anything that isn't at least two path segments below a drive root, or
+  that *is* a well-known top-level directory itself (`C:\Windows`,
+  `C:\Program Files`, a drive root, etc.) - regardless of what a
+  registry value claims an install location is.
+- **Registry deletes are scoped.** The app will only ever delete a
+  registry key that is a direct child of an `Uninstall` key - never
+  anything shallower.
+- **Force-remove doesn't pre-select the risky action.** Registry key and
+  shortcut removal are pre-checked for convenience; recursive folder
+  deletion always starts unchecked, and the confirmation dialog lists the
+  actual paths about to be deleted, not just a count.
+- **No shell command injection.** Every external process is started via
+  argument arrays (`ProcessStartInfo.ArgumentList`), not by building a
+  single command string - the classic uninstaller/Store-app removal path
+  additionally validates the AppX package identity against an allow-list
+  before it's used at all.
+- **CSV export is formula-injection-safe.** A `DisplayName` starting with
+  `=`, `+`, `-`, `@`, or a tab/CR is prefixed so Excel/Sheets can never
+  treat it as a formula.
+- **Running processes are detected before deletion**, both for a normal
+  uninstall and for force-remove, since a locked file can't be deleted
+  anyway and this avoids leaving a program half-removed.
+- **Everything destructive requires explicit confirmation** - nothing in
+  the Leftover Scanner is pre-selected, and every delete path shows what
+  it's about to do before doing it.
+
+If you're auditing this code, the places to look are
+`Uninstaller.Core/Services/UninstallService.cs`,
+`ForceRemovalService.cs`, `PathSafetyGuard.cs`, and
+`LeftoverScannerService.cs`.
 
 ## Project layout
 
@@ -71,7 +128,7 @@ and uses WPF, Win32 registry APIs, and Windows-only interop).
 # Restore & build
 dotnet build Uninstaller.sln -c Release
 
-# Run (will prompt for elevation on launch)
+# Run (launches unelevated; individual actions prompt for elevation as needed)
 dotnet run --project src\Uninstaller.App\Uninstaller.App.csproj -c Release
 ```
 
@@ -87,8 +144,7 @@ dotnet publish src\Uninstaller.App\Uninstaller.App.csproj -c Release ^
 
 The resulting `Uninstaller.exe` under
 `src\Uninstaller.App\bin\Release\net8.0-windows\win-x64\publish\` can be
-copied anywhere and run directly (Windows will still prompt for
-elevation, per the embedded manifest).
+copied anywhere and run directly.
 
 ## Notes on scope
 

@@ -37,7 +37,9 @@ public sealed class ForceRemovalService
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(program.InstallLocation) && Directory.Exists(program.InstallLocation))
+        if (!string.IsNullOrWhiteSpace(program.InstallLocation) &&
+            Directory.Exists(program.InstallLocation) &&
+            PathSafetyGuard.IsSafeToDeleteRecursively(program.InstallLocation))
         {
             items.Add(new LeftoverItem
             {
@@ -80,6 +82,11 @@ public sealed class ForceRemovalService
                         RemoveRegistryKey(item.Path, item.RegistryArchitecture);
                         break;
                     case LeftoverKind.Folder:
+                        if (!PathSafetyGuard.IsSafeToDeleteRecursively(item.Path))
+                        {
+                            throw new InvalidOperationException(
+                                $"Refused to delete '{item.Path}' - it does not look like a specific program's install folder.");
+                        }
                         Directory.Delete(item.Path, recursive: true);
                         break;
                     case LeftoverKind.Shortcut:
@@ -90,6 +97,12 @@ public sealed class ForceRemovalService
                 var msg = $"Removed {item.Description ?? item.Kind.ToString()}: {item.Path}";
                 _logger.Log(msg);
                 results.Add(OperationResult.Ok(item.Path, msg));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                var msg = $"Failed to remove {item.Path}: {ex.Message} Try File > Restart as Administrator.";
+                _logger.Log(msg);
+                results.Add(OperationResult.Fail(item.Path, msg));
             }
             catch (Exception ex)
             {
@@ -105,6 +118,12 @@ public sealed class ForceRemovalService
     private static void RemoveRegistryKey(string fullPath, ProgramArchitecture architecture)
     {
         var (hive, subPath) = SplitRegistryPath(fullPath);
+
+        if (!PathSafetyGuard.IsSafeToDeleteRegistryKey(subPath))
+        {
+            throw new InvalidOperationException(
+                $"Refused to delete registry key '{fullPath}' - it is not a specific program's Uninstall subkey.");
+        }
 
         // WOW64 registry redirection means a key read via the 32-bit view
         // reports the same virtual path as its 64-bit counterpart, even

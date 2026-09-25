@@ -52,8 +52,14 @@ public partial class ForceRemoveWindow : Window
             ? $"No leftover files or registry entries were found for '{programName}'."
             : $"Force remove leftovers for '{programName}'";
 
+        // Registry keys and shortcuts are narrow, exact-match deletions, so
+        // they're pre-checked for convenience. Recursive folder deletion is
+        // the highest-blast-radius action here (and the one most affected by
+        // an attacker-influenceable InstallLocation on a per-user entry), so
+        // it always starts unchecked - the user must explicitly opt in after
+        // reviewing the path shown in the list below.
         _items = new ObservableCollection<SelectableLeftoverItem>(
-            candidates.Select(c => new SelectableLeftoverItem(c, preSelected: true)));
+            candidates.Select(c => new SelectableLeftoverItem(c, preSelected: c.Kind != LeftoverKind.Folder)));
         ItemsList.ItemsSource = _items;
     }
 
@@ -68,8 +74,14 @@ public partial class ForceRemoveWindow : Window
             return;
         }
 
+        var preview = string.Join('\n', SelectedItems.Take(10).Select(i => $"  • {i.Path}"));
+        if (SelectedItems.Count > 10)
+        {
+            preview += $"\n  • ... and {SelectedItems.Count - 10} more";
+        }
+
         var confirm = System.Windows.MessageBox.Show(this,
-            $"Permanently delete {SelectedItems.Count} selected item(s)? This cannot be undone.",
+            $"Permanently delete these {SelectedItems.Count} item(s)? This cannot be undone.\n\n{preview}",
             "Confirm Force Remove", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
         if (confirm != MessageBoxResult.Yes)

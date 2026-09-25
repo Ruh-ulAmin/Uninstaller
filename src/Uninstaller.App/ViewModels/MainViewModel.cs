@@ -210,6 +210,17 @@ public sealed class MainViewModel : ViewModelBase
 
     private static string CsvEscape(string value)
     {
+        // A DisplayName is sourced from the registry, which an unprivileged
+        // process can write to under HKCU. Prefix any value that would be
+        // interpreted as a formula (=, +, -, @, or a tab/CR that Excel also
+        // treats as a formula lead-in) with an apostrophe so opening the
+        // exported CSV in Excel/Sheets can never execute a formula -
+        // the standard CSV-injection mitigation.
+        if (value.Length > 0 && (value[0] is '=' or '+' or '-' or '@' or '\t' or '\r'))
+        {
+            value = "'" + value;
+        }
+
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
         {
             return "\"" + value.Replace("\"", "\"\"") + "\"";

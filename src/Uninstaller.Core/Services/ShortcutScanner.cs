@@ -10,16 +10,17 @@ public static class ShortcutScanner
 {
     public static IEnumerable<string> FindShortcuts(string productName)
     {
-        var nameTokens = productName
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(t => t.Length > 2)
-            .ToArray();
-
-        if (nameTokens.Length == 0)
+        var trimmedName = productName.Trim();
+        if (trimmedName.Length == 0)
         {
             yield break;
         }
 
+        // Require the full product name to appear in the shortcut's file
+        // name, not just any single word - matching on individual tokens
+        // (e.g. "Reader") would also catch unrelated shortcuts like "Reader
+        // Extension" or "Adobe Reader" when force-removing a program called
+        // just "Reader", deleting shortcuts that don't belong to it.
         foreach (var folder in ShortcutFolders())
         {
             if (!Directory.Exists(folder))
@@ -41,7 +42,7 @@ public static class ShortcutScanner
             foreach (var file in files)
             {
                 var fileNameNoExt = Path.GetFileNameWithoutExtension(file);
-                if (nameTokens.Any(token => fileNameNoExt.Contains(token, StringComparison.OrdinalIgnoreCase)))
+                if (fileNameNoExt.Contains(trimmedName, StringComparison.OrdinalIgnoreCase))
                 {
                     yield return file;
                 }

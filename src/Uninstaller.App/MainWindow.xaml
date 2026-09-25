@@ -29,6 +29,9 @@
                 <MenuItem Header="_Export Program List..." InputGestureText="Ctrl+E" Click="ExportMenuItem_Click" />
                 <MenuItem Header="Open _Log Folder" Click="OpenLogFolderMenuItem_Click" />
                 <Separator />
+                <MenuItem Header="Restart as _Administrator" Click="RestartAsAdminButton_Click"
+                          Visibility="{Binding IsAdministrator, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                <Separator />
                 <MenuItem Header="E_xit" InputGestureText="Alt+F4" Click="ExitMenuItem_Click" />
             </MenuItem>
 
@@ -135,14 +138,23 @@
             </ToolBar>
         </ToolBarTray>
 
-        <!-- ===================== Elevation warning bar ===================== -->
+        <!-- ===================== Elevation notice bar ===================== -->
         <Border Grid.Row="2" Background="{DynamicResource WarningBackgroundBrush}"
                 BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="0,0,0,1" Padding="12,6"
                 Visibility="{Binding IsAdministrator, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-            <TextBlock Foreground="{DynamicResource WarningTextBrush}" TextWrapping="Wrap">
-                <Run Text="&#x26A0; Not running as administrator." FontWeight="SemiBold" />
-                <Run Text=" Some programs may fail to uninstall or leave files behind. Restart Uninstaller as administrator for full functionality." />
-            </TextBlock>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Foreground="{DynamicResource WarningTextBrush}" TextWrapping="Wrap"
+                           VerticalAlignment="Center">
+                    <Run Text="&#x26A0; Not running as administrator." FontWeight="SemiBold" />
+                    <Run Text=" That's expected and safe for most programs - you'll only be prompted for elevation when a specific action needs it (e.g. removing a machine-wide program)." />
+                </TextBlock>
+                <Button Grid.Column="1" Content="Restart as Administrator" Margin="12,0,0,0"
+                        Click="RestartAsAdminButton_Click" />
+            </Grid>
         </Border>
 
         <!-- ===================== Main content ===================== -->

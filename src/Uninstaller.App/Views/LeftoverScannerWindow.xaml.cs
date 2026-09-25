@@ -65,8 +65,14 @@ public partial class LeftoverScannerWindow : Window
             return;
         }
 
+        var preview = string.Join('\n', selected.Take(10).Select(i => $"  • {i.Path}"));
+        if (selected.Count > 10)
+        {
+            preview += $"\n  • ... and {selected.Count - 10} more";
+        }
+
         var confirm = System.Windows.MessageBox.Show(this,
-            $"Permanently delete {selected.Count} selected item(s)? This cannot be undone.",
+            $"Permanently delete these {selected.Count} item(s)? This cannot be undone.\n\n{preview}",
             "Confirm Removal", MessageBoxButton.YesNo, MessageBoxImage.Warning);
 
         if (confirm != MessageBoxResult.Yes)

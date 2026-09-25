@@ -105,6 +105,11 @@ public sealed class LeftoverScannerService
                     continue;
                 }
 
+                if (!PathSafetyGuard.IsSafeToDeleteRecursively(dir))
+                {
+                    continue;
+                }
+
                 items.Add(new LeftoverItem
                 {
                     Kind = LeftoverKind.Folder,
